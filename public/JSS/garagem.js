@@ -4,7 +4,7 @@
 //      GERENCIAMENTO DA GARAGEM & PERSISTÊNCIA (AGORA VIA API/MONGODB)
 // ==================================================
 
-const backendUrl = 'https://3bijv.netlify.app'; // URL do seu backend
+const backendUrl = 'https://jv3bi.onrender.com'; // URL do seu backend
 /** @type {Object.<string, CarroBase>} */
 let garagem = {};
 
@@ -1399,5 +1399,6 @@ function setupEventListeners() {
 
 
 document.addEventListener('DOMContentLoaded', inicializarAplicacao);
+
 
 
