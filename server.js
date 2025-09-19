@@ -1,4 +1,4 @@
-// server.js - VERSÃO CORRIGIDA
+// server.js - VERSÃO CORRIGIDA E ATUALIZADA
 
 // Importações
 import express from 'express';
@@ -220,6 +220,59 @@ app.post('/api/garagem/veiculos', async (req, res) => {
     } catch (error) {
         console.error('Erro ao salvar novo veículo:', error);
         res.status(500).json({ error: 'Erro ao salvar novo veículo' });
+    }
+});
+
+// ROTA PUT: Atualizar um veículo existente
+app.put('/api/garagem/veiculos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const dadosAtualizados = req.body;
+        
+        // Remove o _id do corpo para evitar conflitos ao atualizar
+        delete dadosAtualizados._id;
+
+        console.log(`[Servidor] PUT /api/garagem/veiculos/${id} - Atualizando...`);
+        
+        // Encontra pelo ID e atualiza com os novos dados
+        const veiculoAtualizado = await VeiculoGaragem.findByIdAndUpdate(
+            id,
+            dadosAtualizados,
+            { new: true, runValidators: true } // {new: true} retorna o documento modificado
+        );
+
+        if (!veiculoAtualizado) {
+            return res.status(404).json({ error: 'Veículo não encontrado para atualizar.' });
+        }
+
+        console.log('[Servidor] Veículo atualizado com sucesso!');
+        res.status(200).json(veiculoAtualizado);
+
+    } catch (error) {
+        console.error('Erro ao atualizar veículo:', error);
+        res.status(500).json({ error: 'Erro ao atualizar veículo no servidor.' });
+    }
+});
+
+// ROTA DELETE: Excluir um veículo
+app.delete('/api/garagem/veiculos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log(`[Servidor] DELETE /api/garagem/veiculos/${id} - Excluindo...`);
+
+        const veiculoExcluido = await VeiculoGaragem.findByIdAndDelete(id);
+
+        if (!veiculoExcluido) {
+            return res.status(404).json({ error: 'Veículo não encontrado para excluir.' });
+        }
+
+        console.log('[Servidor] Veículo excluído com sucesso!');
+        // Retorna uma mensagem de sucesso
+        res.status(200).json({ message: 'Veículo excluído com sucesso.' });
+
+    } catch (error) {
+        console.error('Erro ao excluir veículo:', error);
+        res.status(500).json({ error: 'Erro ao excluir veículo no servidor.' });
     }
 });
 
