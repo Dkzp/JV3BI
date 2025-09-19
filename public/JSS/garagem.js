@@ -1,19 +1,16 @@
-// garagem.js
+// garagem.js - VERSÃO ATUALIZADA
 
 // ==================================================
 //      GERENCIAMENTO DA GARAGEM & PERSISTÊNCIA (AGORA VIA API/MONGODB)
 // ==================================================
 
-const backendUrl = 'https://jv3bi.onrender.com'; // URL do seu backend
+const backendUrl = 'https://3bijv.netlify.app'; // URL do seu backend
 /** @type {Object.<string, CarroBase>} */
 let garagem = {};
 
 // Cache para a previsão do tempo
 let previsaoProcessadaCompletaCache = null; 
 let nomeCidadeCache = ""; 
-
-// A função salvarGaragem() foi removida, pois agora cada ação (adicionar, editar, excluir)
-// terá sua própria chamada para a API, tornando o salvamento mais granular e seguro.
 
 /**
  * Carrega os veículos do banco de dados via API.
@@ -83,9 +80,6 @@ async function carregarGaragem() {
     atualizarInterfaceCompleta();
 }
 
-// A função inicializarVeiculosPadrao() foi removida. O banco de dados é a única fonte de verdade.
-// Se quiser dados iniciais, eles devem ser inseridos diretamente no banco ou através de um script de "seed" no backend.
-
 // ==================================================
 //      ATUALIZAÇÃO DA INTERFACE GERAL (UI)
 // ==================================================
@@ -123,7 +117,6 @@ function atualizarInterfaceCompleta() {
     console.log("Interface completa atualizada.");
 }
 
-// ... (O restante das funções de UI como limparAreaDisplay, atualizarMenuVeiculos, marcarBotaoAtivo, etc., continuam iguais)
 function limparAreaDisplay(mostrarMsgGaragemVazia = false) {
     const displayArea = document.getElementById('veiculo-display-area');
     if (displayArea) {
@@ -201,15 +194,14 @@ function renderizarVeiculo(veiculoId) {
     container.querySelector('.btn-limpar-historico')?.addEventListener('click', () => handleLimparHistorico(veiculoId));
     container.querySelector('.form-agendamento')?.addEventListener('submit', (e) => handleAgendarManutencao(e, veiculoId));
 
-    // --- NOVA LÓGICA PARA DETALHES EXTRAS (EDITÁVEL) ---
+    // --- LÓGICA PARA DETALHES EXTRAS (EDITÁVEL) ---
     const btnDetalhes = container.querySelector('.btn-detalhes-extras');
     const areaDetalhes = container.querySelector('.detalhes-extras-area');
     const btnEditar = container.querySelector('.btn-editar-detalhes');
     
-    // Limpa o estado inicial para garantir que não haja lixo de renderizações anteriores
     areaDetalhes.innerHTML = '<p>Clique no botão acima para carregar os detalhes.</p>';
     btnEditar.style.display = 'none';
-    btnEditar.onclick = null; // Limpa qualquer listener antigo do botão de editar
+    btnEditar.onclick = null;
     
     if (btnDetalhes && areaDetalhes && btnEditar) {
         btnDetalhes.addEventListener('click', async () => {
@@ -228,8 +220,6 @@ function renderizarVeiculo(veiculoId) {
             }
         });
     }
-    // --- FIM DA NOVA LÓGICA ---
-
 
     const editImgInput = container.querySelector('.edit-imagem-input');
     const editImgPreview = container.querySelector('.edit-imagem-preview');
@@ -433,7 +423,6 @@ function handleAdicionarVeiculo(event) {
         }
     };
 
-    // Lógica para ler a imagem como Base64 antes de chamar a função principal
     const file = imgInput?.files[0];
     if (file && file.type.startsWith("image/")) {
         const reader = new FileReader();
@@ -448,62 +437,254 @@ function handleAdicionarVeiculo(event) {
     }
 }
 
+/**
+ * Coleta os dados do formulário de edição, envia para a API via PUT e atualiza a UI.
+ * @param {string} veiculoId - O ID do veículo sendo editado.
+ */
+async function handleSalvarEdicaoVeiculo(veiculoId) {
+    const v = garagem[veiculoId];
+    if (!v) return;
 
-// As funções abaixo (handleSalvarEdicao, handleAgendarManutencao, etc.)
-// AINDA USAM a lógica antiga. Elas precisariam ser adaptadas para usar
-// rotas PUT e DELETE no backend, similar ao que fizemos com POST.
-// Por enquanto, elas NÃO salvarão no banco de dados.
-// (O restante do arquivo continua igual ao seu original)
-function handleSalvarEdicaoVeiculo(veiculoId) {
-    alert("Função 'Salvar Edição' ainda não conectada ao banco de dados!");
-    // TODO: Criar rota PUT /api/garagem/veiculos/:id no backend
-    // TODO: Fazer um fetch('...', { method: 'PUT', ... }) aqui
-    console.warn("A edição NÃO foi salva no banco de dados.");
+    const displayArea = document.getElementById('veiculo-display-area');
+    const container = displayArea?.querySelector(`.veiculo-renderizado[data-template-id="${veiculoId}"]`);
+    if (!container) {
+        alert("Erro: Não foi possível encontrar a área de edição do veículo.");
+        return;
+    }
+
+    const btnSalvar = container.querySelector('.salvar-veiculo-btn');
+    btnSalvar.disabled = true;
+    btnSalvar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Salvando...';
+
+    // Coleta dos dados do formulário de edição
+    const modelo = container.querySelector('.edit-modelo-veiculo').value.trim();
+    const cor = container.querySelector('.edit-cor-veiculo').value.trim();
+    const placa = container.querySelector('.edit-placa-veiculo').value.trim().toUpperCase();
+    const ano = container.querySelector('.edit-ano-veiculo').value;
+    const dataCnh = container.querySelector('.edit-cnh-veiculo').value;
+    const imagemInput = container.querySelector('.edit-imagem-input');
+
+    // Função interna para processar o salvamento após a imagem ser lida (ou não)
+    const proceedWithSave = async (novaImagemSrc) => {
+        try {
+            // Atualiza o objeto local primeiro
+            v.modelo = modelo;
+            v.cor = cor;
+            v.placa = placa;
+            v.ano = ano ? parseInt(ano) : null;
+            // Recria o objeto Date para garantir a validação
+            v.dataVencimentoCNH = dataCnh ? new Date(dataCnh + 'T00:00:00Z') : null;
+            if (novaImagemSrc) {
+                v.imagemSrc = novaImagemSrc;
+            }
+
+            // Prepara os dados para enviar à API
+            const dadosParaAPI = v.toJSON();
+
+            // Envia a requisição PUT para o backend
+            const response = await fetch(`${backendUrl}/api/garagem/veiculos/${veiculoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dadosParaAPI)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Erro do servidor ao salvar.');
+            }
+            
+            alert(`Veículo "${v.modelo}" atualizado com sucesso!`);
+            v.atualizarInformacoesUI("Edição Salva");
+            atualizarMenuVeiculos(); // Atualiza o nome no menu, se mudou
+            marcarBotaoAtivo(veiculoId);
+            verificarVencimentoCNH(); // Re-checa alertas de CNH
+
+        } catch (error) {
+            console.error("Erro ao salvar edição do veículo:", error);
+            alert(`Falha ao salvar alterações: ${error.message}`);
+        } finally {
+            btnSalvar.disabled = false;
+            btnSalvar.innerHTML = '<i class="fa-solid fa-save"></i> Salvar Alterações';
+        }
+    };
+
+    // Lógica para ler a nova imagem, se houver
+    const file = imagemInput?.files[0];
+    if (file && file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => proceedWithSave(e.target.result); // Chama o save com a imagem em Base64
+        reader.onerror = () => {
+            alert("Erro ao ler a nova imagem. A alteração da imagem será ignorada.");
+            proceedWithSave(null); // Prossegue sem alterar a imagem
+        };
+        reader.readAsDataURL(file);
+    } else {
+        proceedWithSave(null); // Prossegue sem alterar a imagem
+    }
 }
 
-function handleAgendarManutencao(event, veiculoId) {
+async function handleAgendarManutencao(event, veiculoId) {
     event.preventDefault();
     const v = garagem[veiculoId];
     if (!v) return;
-    const form = event.target;
-    // ... lógica para pegar dados do form ...
     
-    alert("Função 'Agendar Manutenção' ainda não salva as alterações no banco de dados!");
-    // TODO: Atualizar o veículo no backend com o novo histórico de manutenção.
-    // Isso geralmente é feito com uma rota PUT /api/garagem/veiculos/:id
-    console.warn("A nova manutenção NÃO foi salva no banco de dados.");
+    const form = event.target;
+    const btnAgendar = form.querySelector('.agendar-manutencao-btn');
+    btnAgendar.disabled = true;
+    btnAgendar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Agendando...';
 
-    // Temporariamente, só adiciona na memória local para a UI funcionar
     const dataInput = form.querySelector('.agendamento-data');
     const horaInput = form.querySelector('.agendamento-hora');
     const tipoInput = form.querySelector('.agendamento-tipo');
+    const custoInput = form.querySelector('.agendamento-custo');
+    const obsInput = form.querySelector('.agendamento-obs');
+
     const dataStr = dataInput.value;
     const horaStr = horaInput?.value || '00:00';
     const tipoStr = tipoInput.value.trim();
-    const custoStr = form.querySelector('.agendamento-custo')?.value;
-    const obsStr = form.querySelector('.agendamento-obs')?.value.trim();
+    
+    if(!dataStr || !tipoStr) {
+        alert("Data e Tipo de Serviço são obrigatórios!");
+        btnAgendar.disabled = false;
+        btnAgendar.innerHTML = '<i class="fa-solid fa-calendar-plus"></i> Agendar Serviço';
+        return;
+    }
+
+    const custoStr = custoInput?.value;
+    const obsStr = obsInput?.value.trim();
     const dataHoraCompleta = new Date(`${dataStr}T${horaStr}`);
+
     const novaManutencao = new Manutencao(dataHoraCompleta, tipoStr, custoStr, obsStr);
+
+    if(!novaManutencao.validar()){
+        alert("Os dados do agendamento são inválidos. Verifique a data e o tipo.");
+        btnAgendar.disabled = false;
+        btnAgendar.innerHTML = '<i class="fa-solid fa-calendar-plus"></i> Agendar Serviço';
+        return;
+    }
+    
     v.historicoManutencao.push(novaManutencao);
-    v.atualizarInformacoesUI("Manutenção Adicionada (Local)");
-    atualizarExibicaoAgendamentosFuturos();
-    form.reset();
+    v.historicoManutencao.sort((a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0));
+
+    try {
+        const response = await fetch(`${backendUrl}/api/garagem/veiculos/${veiculoId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(v.toJSON())
+        });
+
+        if (!response.ok) {
+            v.historicoManutencao.shift(); // Remove o item recém-adicionado se a API falhar
+            const errData = await response.json();
+            throw new Error(errData.error || 'Erro do servidor');
+        }
+
+        alert("Serviço agendado e salvo com sucesso!");
+        v.atualizarInformacoesUI("Manutenção Adicionada");
+        atualizarExibicaoAgendamentosFuturos();
+        verificarAgendamentosProximos();
+        form.reset();
+    } catch (error) {
+        console.error("Erro ao agendar manutenção:", error);
+        alert(`Falha ao agendar serviço: ${error.message}`);
+    } finally {
+        btnAgendar.disabled = false;
+        btnAgendar.innerHTML = '<i class="fa-solid fa-calendar-plus"></i> Agendar Serviço';
+    }
 }
 
-function handleLimparHistorico(veiculoId) {
-     alert("Função 'Limpar Histórico' ainda não conectada ao banco de dados!");
-     // TODO: Fazer chamada à API para limpar o histórico do veículo específico.
-     console.warn("O histórico NÃO foi limpo no banco de dados.");
+
+/**
+ * Limpa o histórico de manutenção de um veículo, salva a alteração no backend e atualiza a UI.
+ * @param {string} veiculoId - O ID do veículo.
+ */
+async function handleLimparHistorico(veiculoId) {
+    const v = garagem[veiculoId];
+    if (!v) return;
+
+    if (confirm(`Tem certeza que deseja limpar TODO o histórico de mimos para o veículo "${v.modelo}"? Esta ação não pode ser desfeita.`)) {
+        const displayArea = document.getElementById('veiculo-display-area');
+        const btnLimpar = displayArea?.querySelector(`.veiculo-renderizado[data-template-id="${veiculoId}"] .btn-limpar-historico`);
+        if(btnLimpar) {
+            btnLimpar.disabled = true;
+            btnLimpar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        }
+
+        const historicoAntigo = [...v.historicoManutencao];
+        v.historicoManutencao = [];
+
+        try {
+            const response = await fetch(`${backendUrl}/api/garagem/veiculos/${veiculoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(v.toJSON())
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Erro do servidor ao limpar histórico.');
+            }
+            
+            alert('Histórico de manutenção limpo e salvo com sucesso!');
+            v.atualizarInformacoesUI("Histórico Limpo");
+            atualizarExibicaoAgendamentosFuturos();
+            verificarAgendamentosProximos();
+
+        } catch (error) {
+            console.error("Erro ao limpar histórico:", error);
+            alert(`Falha ao limpar histórico: ${error.message}`);
+            v.historicoManutencao = historicoAntigo;
+        } finally {
+             if(btnLimpar) {
+                btnLimpar.disabled = false;
+                btnLimpar.innerHTML = '<i class="fa-solid fa-eraser"></i> Limpar';
+            }
+        }
+    }
 }
 
-function handleExcluirVeiculo(veiculoId) {
-     alert("Função 'Excluir Veículo' ainda não conectada ao banco de dados!");
-     // TODO: Criar rota DELETE /api/garagem/veiculos/:id no backend
-     // TODO: Fazer um fetch('...', { method: 'DELETE' }) aqui
-     console.warn("O veículo NÃO foi excluído do banco de dados.");
+
+/**
+ * Exclui um veículo do backend e, se bem-sucedido, da garagem local, atualizando a UI.
+ * @param {string} veiculoId - O ID do veículo a ser excluído.
+ */
+async function handleExcluirVeiculo(veiculoId) {
+    const v = garagem[veiculoId];
+    if (!v) return;
+
+    if (confirm(`Tem certeza que deseja excluir o veículo "${v.modelo}" da sua garagem?`)) {
+        const displayArea = document.getElementById('veiculo-display-area');
+        const btnExcluir = displayArea?.querySelector(`.veiculo-renderizado[data-template-id="${veiculoId}"] .btn-excluir-veiculo`);
+         if(btnExcluir) {
+            btnExcluir.disabled = true;
+            btnExcluir.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        }
+
+        try {
+            const response = await fetch(`${backendUrl}/api/garagem/veiculos/${veiculoId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Erro do servidor ao excluir.');
+            }
+            
+            alert(`Veículo "${v.modelo}" excluído com sucesso.`);
+            delete garagem[veiculoId];
+            atualizarInterfaceCompleta();
+
+        } catch (error) {
+            console.error("Erro ao excluir veículo:", error);
+            alert(`Falha ao excluir veículo: ${error.message}`);
+            if(btnExcluir) {
+                btnExcluir.disabled = false;
+                btnExcluir.innerHTML = '<i class="fa-solid fa-trash-can"></i> Excluir Veículo';
+            }
+        }
+    }
 }
 
-// ... (O resto do arquivo, a partir daqui, pode continuar igual ao seu original)
 // ==================================================
 //      ALERTAS E VISUALIZAÇÕES GERAIS
 // ==================================================
@@ -642,18 +823,13 @@ async function buscarDetalhesVeiculoAPI(identificadorVeiculo) {
 
 
 // --- NOVAS FUNÇÕES PARA EDIÇÃO DE DETALHES ---
-
-/** Converte Date para string no formato YYYY-MM-DD para o input */
 function toInputDateString(date) {
     if (!date || !(date instanceof Date) || isNaN(date)) return '';
-    // Converte para o fuso horário local antes de pegar o ISO string pra evitar erro de um dia a menos
-    const tzoffset = (new Date()).getTimezoneOffset() * 60000; //offset in milliseconds
+    const tzoffset = (new Date()).getTimezoneOffset() * 60000;
     const localISOTime = (new Date(date - tzoffset)).toISOString().slice(0, -1);
     return localISOTime.split('T')[0];
 }
 
-
-/** Formata e exibe os detalhes extras no modo de visualização */
 function exibirDetalhesExtras(detalhes, areaDetalhes, veiculoId) {
     let html = '<p><i class="fa-regular fa-circle-xmark"></i> Nenhum detalhe extra para exibir. Clique em editar para adicionar.</p>';
     if (detalhes && Object.keys(detalhes).length > 1 && detalhes.veiculoId) {
@@ -683,12 +859,10 @@ function exibirDetalhesExtras(detalhes, areaDetalhes, veiculoId) {
     const btnEditar = areaDetalhes.closest('.detalhes-extras-card').querySelector('.btn-editar-detalhes');
     if(btnEditar) {
         btnEditar.style.display = 'inline-block';
-        // Garante que o listener seja atrelado à versão mais recente dos detalhes
         btnEditar.onclick = () => ativarModoEdicaoDetalhes(detalhes || { veiculoId }, areaDetalhes, veiculoId);
     }
 }
 
-/** Transforma a área de detalhes em um formulário de edição */
 function ativarModoEdicaoDetalhes(detalhes, areaDetalhes, veiculoId) {
     const proxRevisaoStr = detalhes.proximaRevisaoRecomendada ? toInputDateString(new Date(detalhes.proximaRevisaoRecomendada)) : '';
     const recallChecked = detalhes.recallPendente ? 'checked' : '';
@@ -697,21 +871,16 @@ function ativarModoEdicaoDetalhes(detalhes, areaDetalhes, veiculoId) {
         <form class="form-detalhes-extras" style="text-align: left;">
             <label>Valor FIPE (R$):</label>
             <input type="number" name="valorFIPE" step="0.01" value="${detalhes.valorFIPE || ''}" placeholder="35000.50">
-            
             <label>Dica de Manutenção:</label>
             <textarea name="dicaManutencao" placeholder="Dica fofa de manutenção">${detalhes.dicaManutencao || ''}</textarea>
-            
             <label>Próxima Revisão Recomendada:</label>
             <input type="date" name="proximaRevisaoRecomendada" value="${proxRevisaoStr}">
-
             <div style="margin: 15px 0; display:flex; align-items:center;">
                 <input type="checkbox" id="recallPendente-${veiculoId}" name="recallPendente" ${recallChecked} style="width: auto; margin-bottom: 0;">
                 <label for="recallPendente-${veiculoId}" style="display:inline; margin-left: 8px; margin-bottom: 0; font-weight: normal;">Possui Recall Pendente?</label>
             </div>
-            
             <label>Motivo do Recall (se houver):</label>
             <input type="text" name="motivoRecall" value="${detalhes.motivoRecall || ''}" placeholder="Motivo do recall">
-
             <div class="botoes-edicao" style="margin-top:15px;">
                 <button type="submit" class="salvar-detalhes-btn modern-button"><i class="fa-solid fa-save"></i> Salvar</button>
                 <button type="button" class="cancelar-detalhes-btn modern-button" style="background-color: var(--cor-texto-secundario-hk);"><i class="fa-solid fa-times"></i> Cancelar</button>
@@ -729,12 +898,10 @@ function ativarModoEdicaoDetalhes(detalhes, areaDetalhes, veiculoId) {
     });
 
     areaDetalhes.querySelector('.cancelar-detalhes-btn').addEventListener('click', () => {
-        // Usa os detalhes originais (antes da edição) para cancelar
         exibirDetalhesExtras(detalhes, areaDetalhes, veiculoId);
     });
 }
 
-/** Coleta os dados do form e envia para o backend via PUT */
 async function handleSalvarDetalhesExtras(form, veiculoId, areaDetalhes) {
     const btnSalvar = form.querySelector('.salvar-detalhes-btn');
     btnSalvar.disabled = true;
@@ -762,13 +929,11 @@ async function handleSalvarDetalhesExtras(form, veiculoId, areaDetalhes) {
 
         const detalhesAtualizados = await response.json();
         alert('Detalhes salvos com sucesso!');
-        // Exibe os novos detalhes recebidos do servidor
         exibirDetalhesExtras(detalhesAtualizados, areaDetalhes, veiculoId);
 
     } catch (error) {
         console.error("Erro ao salvar detalhes extras:", error);
         alert(`Erro: ${error.message}`);
-        // Restaura o botão em caso de erro
         btnSalvar.disabled = false;
         btnSalvar.innerHTML = '<i class="fa-solid fa-save"></i> Salvar';
     }
@@ -778,15 +943,6 @@ async function handleSalvarDetalhesExtras(form, veiculoId, areaDetalhes) {
 // ==================================================
 //      BUSCA DADOS EXTERNOS (AGORA VIA NOSSO BACKEND)
 // ==================================================
-
-/**
- * @async
- * @function buscarPrevisaoDetalhada
- * @description Busca a previsão do tempo detalhada para uma cidade através do nosso backend.
- * @param {string} cidade - O nome da cidade para a previsão.
- * @returns {Promise<object>} Um objeto com os dados da previsão da API.
- * @throws {Error} Lança um erro se a busca falhar ou a cidade não for fornecida.
- */
 async function buscarPrevisaoDetalhada(cidade) {
     if (!cidade) {
         console.error("[Frontend] Cidade é obrigatória para buscar previsão detalhada.");
@@ -794,40 +950,27 @@ async function buscarPrevisaoDetalhada(cidade) {
     }
 
     const cidadeCodificada = encodeURIComponent(cidade);
-    // A URL agora aponta para o seu servidor backend e usa a variável global
     const urlAPI = `${backendUrl}/api/previsao/${cidadeCodificada}`;
     
     console.log(`[Frontend] Buscando previsão detalhada para: ${cidade} em ${urlAPI}`);
 
     try {
         const response = await fetch(urlAPI);
-
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({})); 
-            // A mensagem de erro agora vem do nosso backend, ex: errorData.error
             const mensagemErro = errorData.error || `Erro ${response.statusText} (${response.status}) ao buscar previsão no servidor.`;
             console.error(`[Frontend] Erro do backend (${response.status}): ${mensagemErro}`);
-            throw new Error(mensagemErro); // Esta mensagem será exibida na UI
+            throw new Error(mensagemErro);
         }
-        
         const data = await response.json(); 
         console.log("[Frontend] Dados da previsão detalhada recebidos do backend:", data);
         return data; 
-
     } catch (error) { 
         console.error("[Frontend] Erro na requisição fetch ou processamento da previsão detalhada:", error.message);
-        // Repassa o erro com a mensagem já formatada (seja do fetch ou do nosso throw acima)
         throw error; 
     }
 }
 
-
-/**
- * @function processarDadosForecast
- * @description Processa os dados brutos da API de forecast, agrupando por dia e resumindo as informações.
- * @param {object} data - O objeto JSON completo retornado pela API de forecast (via nosso backend).
- * @returns {Array<object>|null} Um array de objetos, onde cada objeto representa um dia com dados resumidos
- */
 function processarDadosForecast(data) {
     if (!data || !data.list || !Array.isArray(data.list) || data.list.length === 0) {
         console.warn("[Frontend] Dados de forecast inválidos ou vazios para processamento recebidos do backend.");
@@ -860,16 +1003,13 @@ function processarDadosForecast(data) {
         const dadosDoDia = previsaoPorDia[diaStr];
         const temp_min = Math.min(...dadosDoDia.temps);
         const temp_max = Math.max(...dadosDoDia.temps);
-
         let iconeRep = dadosDoDia.weatherEntries[0].icon;
         let descricaoRep = dadosDoDia.weatherEntries[0].description;
-
         const entradaMeioDia = dadosDoDia.weatherEntries.find(entry => entry.dt_txt.includes("12:00:00"));
         if (entradaMeioDia) {
             iconeRep = entradaMeioDia.icon;
             descricaoRep = entradaMeioDia.description;
         } else {
-            // Se não houver entrada às 12:00, pega a entrada mais próxima do meio-dia ou a central
             const entradaMaisProximaMeioDia = dadosDoDia.weatherEntries.reduce((prev, curr) => {
                 const horaPrev = parseInt(prev.dt_txt.split(' ')[1].split(':')[0]);
                 const horaCurr = parseInt(curr.dt_txt.split(' ')[1].split(':')[0]);
@@ -878,7 +1018,6 @@ function processarDadosForecast(data) {
             iconeRep = entradaMaisProximaMeioDia.icon;
             descricaoRep = entradaMaisProximaMeioDia.description;
         }
-        
         previsaoDiariaResumida.push({
             data: diaStr,
             temp_min: parseFloat(temp_min.toFixed(1)),
@@ -887,17 +1026,10 @@ function processarDadosForecast(data) {
             icone: iconeRep
         });
     }
-    previsaoDiariaResumida.sort((a,b) => new Date(a.data) - new Date(b.data)); // Garante ordem cronológica
-    
+    previsaoDiariaResumida.sort((a,b) => new Date(a.data) - new Date(b.data));
     return previsaoDiariaResumida;
 }
 
-/**
- * Filtra a previsão do tempo armazenada em cache para um número específico de dias e a exibe.
- * Atualiza o estado ativo dos botões de filtro.
- * @param {number|string} numeroDeDias - O número de dias para exibir (1, 3, 5).
- * @param {HTMLElement} areaResultado - O elemento HTML onde a previsão será exibida.
- */
 function aplicarFiltroEExibirPrevisao(numeroDeDias, areaResultado) {
     if (!previsaoProcessadaCompletaCache || !areaResultado) {
         console.warn("[Frontend] Cache de previsão ou área de resultado não disponíveis para aplicar filtro.");
@@ -906,72 +1038,45 @@ function aplicarFiltroEExibirPrevisao(numeroDeDias, areaResultado) {
         if (divControlesPrevisao) divControlesPrevisao.style.display = 'none';
         return;
     }
-
     const diasParaExibirReq = parseInt(numeroDeDias);
     let previsaoFiltrada;
     let numDiasStringParaComparacao = numeroDeDias.toString();
-
-
     if (isNaN(diasParaExibirReq) || diasParaExibirReq <= 0) {
-        previsaoFiltrada = previsaoProcessadaCompletaCache; // Mostra tudo se inválido
+        previsaoFiltrada = previsaoProcessadaCompletaCache;
         numDiasStringParaComparacao = previsaoProcessadaCompletaCache.length.toString(); 
     } else if (diasParaExibirReq > previsaoProcessadaCompletaCache.length) {
-        previsaoFiltrada = previsaoProcessadaCompletaCache; // Mostra tudo se pedir mais do que tem
+        previsaoFiltrada = previsaoProcessadaCompletaCache;
         numDiasStringParaComparacao = previsaoProcessadaCompletaCache.length.toString();
     } else {
         previsaoFiltrada = previsaoProcessadaCompletaCache.slice(0, diasParaExibirReq);
     }
-    
     exibirPrevisaoDetalhada(previsaoFiltrada, nomeCidadeCache, areaResultado);
-
     document.querySelectorAll('#filtros-previsao-dias .filtro-dia-btn').forEach(btn => {
         btn.classList.toggle('filtro-dia-btn-ativo', btn.dataset.dias === numDiasStringParaComparacao);
     });
 }
 
-
-/**
- * @function exibirPrevisaoDetalhada
- * @description Exibe a previsão do tempo detalhada para múltiplos dias na UI.
- * @param {Array<object>|null} previsaoDiariaProcessada - Array com a previsão processada por dia.
- * @param {string} nomeCidade - Nome da cidade para o título.
- * @param {HTMLElement} areaResultado - O elemento HTML onde a previsão será exibida.
- */
 function exibirPrevisaoDetalhada(previsaoDiariaProcessada, nomeCidade, areaResultado) {
     if (!areaResultado) {
         console.error("[Frontend] Área de resultado para previsão detalhada não fornecida.");
         return;
     }
     areaResultado.innerHTML = ''; 
-
     if (!previsaoDiariaProcessada || previsaoDiariaProcessada.length === 0) {
-        // A mensagem de erro específica já deve ter sido exibida pelo catch do event listener.
-        // Aqui, podemos apenas confirmar que não há dados para exibir.
         areaResultado.innerHTML = `<p><i class="fa-regular fa-circle-xmark"></i> Não há dados de previsão para exibir para "${nomeCidade}".</p>`;
         return;
     }
-
     const titulo = document.createElement('h4');
     titulo.innerHTML = `<i class="fa-solid fa-calendar-days"></i> Previsão para ${nomeCidade}`;
     areaResultado.appendChild(titulo);
-
     const containerDias = document.createElement('div');
     containerDias.className = 'forecast-container'; 
-
     previsaoDiariaProcessada.forEach(diaInfo => {
         const diaCard = document.createElement('div');
         diaCard.className = 'day-weather-card'; 
-
-        const dataObj = new Date(diaInfo.data + 'T00:00:00'); // Adiciona hora para evitar problemas de fuso ao formatar só a data
-        const dataFormatada = dataObj.toLocaleDateString('pt-BR', {
-            weekday: 'short', 
-            day: 'numeric',   
-            month: 'short',
-            timeZone: 'UTC' // Para consistência na exibição da data
-        });
-
+        const dataObj = new Date(diaInfo.data + 'T00:00:00');
+        const dataFormatada = dataObj.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
         const iconeUrl = `https://openweathermap.org/img/wn/${diaInfo.icone}@2x.png`;
-
         diaCard.innerHTML = `
             <p class="forecast-date"><strong>${dataFormatada}</strong></p>
             <img src="${iconeUrl}" alt="${diaInfo.descricao}" class="weather-icon-daily" title="${diaInfo.descricao}">
@@ -983,159 +1088,66 @@ function exibirPrevisaoDetalhada(previsaoDiariaProcessada, nomeCidade, areaResul
         `;
         containerDias.appendChild(diaCard);
     });
-
     areaResultado.appendChild(containerDias);
-
-    if (!document.getElementById('forecast-styles')) {
-        const style = document.createElement('style');
-        style.id = 'forecast-styles';
-        style.innerHTML = `
-            .forecast-container {
-                display: flex;
-                flex-wrap: wrap; 
-                gap: 10px; 
-                justify-content: space-around; 
-                margin-top: 10px;
-            }
-            .day-weather-card {
-                background-color: rgba(255, 255, 255, 0.15);
-                border-radius: 8px;
-                padding: 15px;
-                text-align: center;
-                min-width: 120px; 
-                flex-grow: 1; 
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }
-            .weather-icon-daily {
-                width: 50px;
-                height: 50px;
-                margin: 5px 0;
-            }
-            .forecast-date {
-                font-size: 0.9em;
-                color: #f0f0f0;
-                margin-bottom: 5px;
-            }
-            .forecast-desc {
-                font-size: 0.85em;
-                margin-bottom: 8px;
-            }
-            .forecast-temp {
-                font-size: 0.9em;
-            }
-            .filtro-dia-btn {
-                padding: 6px 12px;
-                font-size: 0.9em;
-                margin: 0 3px;
-            }
-            .filtro-dia-btn-ativo {
-                background-color: #3498db !important; 
-                color: white !important;
-                font-weight: bold;
-                box-shadow: inset 0 2px 3px rgba(0,0,0,0.15), 0 1px 1px rgba(255,255,255,0.3) !important;
-                border-color: #2980b9 !important;
-            }
-            .filtro-dia-btn:not(.filtro-dia-btn-ativo):hover {
-                 background-color: #5dade2 !important;
-                 border-color: #3498db !important;
-            }
-        `;
-        document.head.appendChild(style);
-    }
 }
 
 // ==================================================
-//      FUNÇÕES DA API DE DICAS - ATIVIDADE B2.P1.A8
+//      FUNÇÕES DA API DE DICAS
 // ==================================================
-
-/**
- * Busca a lista de dicas gerais no backend.
- * @returns {Promise<Array|null>} Um array com as dicas ou null em caso de erro.
- */
 async function buscarDicasGerais() {
     try {
         const response = await fetch(`${backendUrl}/api/dicas-manutencao`);
-        if (!response.ok) {
-            throw new Error(`Erro ${response.status} ao buscar dicas gerais.`);
-        }
-        const dicas = await response.json();
-        return dicas;
+        if (!response.ok) throw new Error(`Erro ${response.status} ao buscar dicas gerais.`);
+        return await response.json();
     } catch (error) {
         console.error("Erro em buscarDicasGerais:", error);
-        return null; // Retorna null para que quem chamou saiba que deu erro
+        return null;
     }
 }
 
-/**
- * Busca dicas para um tipo específico de veículo no backend.
- * @param {string} tipoVeiculo - O tipo do veículo (ex: 'carro', 'moto').
- * @returns {Promise<Array|null>} Um array com as dicas ou null em caso de erro.
- */
 async function buscarDicasPorTipo(tipoVeiculo) {
     if (!tipoVeiculo) return null;
     try {
         const response = await fetch(`${backendUrl}/api/dicas-manutencao/${tipoVeiculo}`);
         if (!response.ok) {
-            // Se o status for 404, o backend já nos deu a resposta que não encontrou.
             if (response.status === 404) {
                 const erroData = await response.json();
-                // Retornamos um array vazio com uma mensagem especial para a UI tratar.
                 return [{ id: 'not-found', dica: erroData.error || `Nenhuma dica encontrada para ${tipoVeiculo}.` }];
             }
             throw new Error(`Erro ${response.status} ao buscar dicas para ${tipoVeiculo}.`);
         }
-        const dicas = await response.json();
-        return dicas;
+        return await response.json();
     } catch (error) {
         console.error(`Erro em buscarDicasPorTipo para "${tipoVeiculo}":`, error);
         return null;
     }
 }
 
-/**
- * Exibe as dicas na área de resultados da UI.
- * @param {Array<object>|null} dicas - O array de objetos de dica.
- * @param {HTMLElement} areaResultado - O elemento do DOM onde as dicas serão exibidas.
- */
 function exibirDicas(dicas, areaResultado) {
     if (!areaResultado) return;
-
     if (!dicas) {
         areaResultado.innerHTML = `<p style="color: red;"><i class="fa-solid fa-bomb"></i> Ops! Ocorreu um erro ao buscar as dicas no servidor.</p>`;
         return;
     }
-
     if (dicas.length === 0) {
         areaResultado.innerHTML = `<p><i class="fa-regular fa-face-surprise"></i> Nenhuma dica encontrada.</p>`;
         return;
     }
-    
-    // Tratamento especial para o nosso erro 404 personalizado
     if (dicas.length === 1 && dicas[0].id === 'not-found') {
         areaResultado.innerHTML = `<p style="color: orange;"><i class="fa-solid fa-magnifying-glass"></i> ${dicas[0].dica}</p>`;
         return;
     }
-
-    // Cria a lista de dicas
     const listaHtml = dicas.map(d => `<li><i class="fa-solid fa-wand-magic-sparkles" style="color: #FF69B4;"></i> ${d.dica}</li>`).join('');
     areaResultado.innerHTML = `<ul>${listaHtml}</ul>`;
 }
 
-
 // =================================================================
-//      FUNÇÕES DA API - Veículos Destaque e Serviços (NOVAS)
+//      FUNÇÕES DA API - Veículos Destaque e Serviços
 // =================================================================
-
-/**
- * Busca os veículos em destaque do backend.
- * @returns {Promise<Array|null>} Um array com os veículos ou null em caso de erro.
- */
 async function buscarVeiculosDestaque() {
     try {
         const response = await fetch(`${backendUrl}/api/garagem/veiculos-destaque`);
-        if (!response.ok) {
-            throw new Error(`Erro ${response.status} ao buscar veículos destaque.`);
-        }
+        if (!response.ok) throw new Error(`Erro ${response.status} ao buscar veículos destaque.`);
         return await response.json();
     } catch (error) {
         console.error("Erro em buscarVeiculosDestaque:", error);
@@ -1143,14 +1155,8 @@ async function buscarVeiculosDestaque() {
     }
 }
 
-/**
- * Exibe os veículos em destaque na UI.
- * @param {Array<object>|null} veiculos - O array de objetos de veículo.
- * @param {HTMLElement} container - O elemento do DOM onde os cards serão exibidos.
- */
 function exibirVeiculosDestaque(veiculos, container) {
     if (!container) return;
-
     if (!veiculos) {
         container.innerHTML = `<p style="color: red;">Ops! Erro ao carregar os veículos destaque.</p>`;
         return;
@@ -1159,7 +1165,6 @@ function exibirVeiculosDestaque(veiculos, container) {
         container.innerHTML = `<p>Nenhum veículo em destaque no momento.</p>`;
         return;
     }
-
     container.innerHTML = veiculos.map(v => `
         <div class="veiculo-card">
             <img src="${v.imagemUrl || 'default_car.png'}" alt="Imagem de ${v.modelo}" class="veiculo-card-img">
@@ -1169,16 +1174,10 @@ function exibirVeiculosDestaque(veiculos, container) {
     `).join('');
 }
 
-/**
- * Busca os serviços oferecidos do backend.
- * @returns {Promise<Array|null>} Um array com os serviços ou null em caso de erro.
- */
 async function buscarServicosOferecidos() {
     try {
         const response = await fetch(`${backendUrl}/api/garagem/servicos-oferecidos`);
-        if (!response.ok) {
-            throw new Error(`Erro ${response.status} ao buscar serviços.`);
-        }
+        if (!response.ok) throw new Error(`Erro ${response.status} ao buscar serviços.`);
         return await response.json();
     } catch (error) {
         console.error("Erro em buscarServicosOferecidos:", error);
@@ -1186,14 +1185,8 @@ async function buscarServicosOferecidos() {
     }
 }
 
-/**
- * Exibe os serviços oferecidos na UI.
- * @param {Array<object>|null} servicos - O array de objetos de serviço.
- * @param {HTMLElement} listaUl - O elemento UL do DOM onde os itens serão exibidos.
- */
 function exibirServicosOferecidos(servicos, listaUl) {
     if (!listaUl) return;
-
     if (!servicos) {
         listaUl.innerHTML = `<li class="servico-item" style="border-left-color: red;">Ops! Erro ao carregar os serviços.</li>`;
         return;
@@ -1202,7 +1195,6 @@ function exibirServicosOferecidos(servicos, listaUl) {
         listaUl.innerHTML = `<li class="servico-item">Nenhum serviço disponível no momento.</li>`;
         return;
     }
-
     listaUl.innerHTML = servicos.map(s => `
         <li class="servico-item">
             <strong>${s.nome}</strong>
@@ -1212,31 +1204,18 @@ function exibirServicosOferecidos(servicos, listaUl) {
     `).join('');
 }
 
-
-/**
- * Função agregadora para carregar conteúdo que não depende do veículo selecionado.
- */
 async function carregarConteudoEstaticoDaAPI() {
     console.log("Carregando conteúdo estático das APIs (Destaques e Serviços)...");
     const containerDestaques = document.getElementById('cards-veiculos-destaque');
     const listaServicos = document.getElementById('lista-servicos-oferecidos');
-
-    // Executa as duas buscas em paralelo para mais eficiência
     const [veiculos, servicos] = await Promise.all([
         buscarVeiculosDestaque(),
         buscarServicosOferecidos()
     ]);
-
-    if (containerDestaques) {
-        exibirVeiculosDestaque(veiculos, containerDestaques);
-    }
-
-    if (listaServicos) {
-        exibirServicosOferecidos(servicos, listaServicos);
-    }
+    if (containerDestaques) exibirVeiculosDestaque(veiculos, containerDestaques);
+    if (listaServicos) exibirServicosOferecidos(servicos, listaServicos);
     console.log("Conteúdo estático da API carregado.");
 }
-
 
 // ==================================================
 //                   INICIALIZAÇÃO DA APLICAÇÃO
@@ -1245,7 +1224,7 @@ function inicializarAplicacao() {
     console.log(`DOM Carregado. Iniciando Garagem Fofinha com Backend...`);
     try {
         setupEventListeners();
-        carregarGaragem(); // Agora carrega do DB!
+        carregarGaragem();
         carregarConteudoEstaticoDaAPI(); 
         console.log("Aplicação inicializada.");
     } catch (e) {
@@ -1292,7 +1271,6 @@ function setupEventListeners() {
         });
     }
 
-    // --- Event Listener para BUSCAR PREVISÃO DO TEMPO (MODIFICADO) ---
     const btnBuscarPrevisao = document.getElementById('btn-buscar-previsao');
     const inputDestino = document.getElementById('viagem-destino');
     const areaResultadoPrevisao = document.getElementById('previsao-resultado-area');
@@ -1301,48 +1279,32 @@ function setupEventListeners() {
     if (btnBuscarPrevisao && inputDestino && areaResultadoPrevisao && divControlesPrevisao) {
         btnBuscarPrevisao.addEventListener('click', async () => {
             const cidade = inputDestino.value.trim();
-
-            // Limpa estado anterior e mostra feedback de carregamento
             areaResultadoPrevisao.innerHTML = `<p><i class="fa-solid fa-spinner fa-spin"></i> Buscando previsão para ${cidade || "destino"}...</p>`;
             btnBuscarPrevisao.disabled = true;
             divControlesPrevisao.style.display = 'none'; 
             previsaoProcessadaCompletaCache = null; 
             nomeCidadeCache = "";
-
             if (!cidade) {
                 areaResultadoPrevisao.innerHTML = `<p style="color: orange;"><i class="fa-solid fa-circle-exclamation"></i> Por favor, informe a Cidade de Destino.</p>`;
                 btnBuscarPrevisao.disabled = false;
                 return;
             }
-            
             try {
-                // Chama a função que agora busca do nosso backend
                 const dadosApi = await buscarPrevisaoDetalhada(cidade); 
-                
-                // O nome da cidade pode vir da resposta da API, que é mais confiável
                 const cidadeRetornada = dadosApi.city?.name || cidade;
-                nomeCidadeCache = cidadeRetornada; // Guarda para usar nos filtros
-
+                nomeCidadeCache = cidadeRetornada;
                 const previsaoProcessada = processarDadosForecast(dadosApi);
-                
                 if (previsaoProcessada && previsaoProcessada.length > 0) {
                     previsaoProcessadaCompletaCache = previsaoProcessada; 
-                    
-                    // Determina o número de dias padrão para exibição (ex: 5 ou o total disponível)
                     const diasDefault = Math.min(5, previsaoProcessadaCompletaCache.length).toString();
                     aplicarFiltroEExibirPrevisao(diasDefault, areaResultadoPrevisao);
-                    
                     divControlesPrevisao.style.display = 'block'; 
                 } else {
-                    // Se processarDadosForecast retornar null ou array vazio, mesmo com dadosApi válidos.
                     areaResultadoPrevisao.innerHTML = `<p><i class="fa-regular fa-circle-xmark"></i> Não foi possível processar os dados da previsão para "${cidadeRetornada}".</p>`;
                 }
-
             } catch (error) { 
-                // Erros de buscarPrevisaoDetalhada (rede, ou do backend) são pegos aqui
                 console.error("[Frontend] Erro no fluxo de busca de previsão:", error);
                 areaResultadoPrevisao.innerHTML = `<p style="color: red;"><i class="fa-solid fa-bomb"></i> Falha: ${error.message}</p>`;
-                // Garante que controles de filtro fiquem escondidos se deu erro
                 divControlesPrevisao.style.display = 'none';
                 previsaoProcessadaCompletaCache = null;
                 nomeCidadeCache = "";
@@ -1351,7 +1313,6 @@ function setupEventListeners() {
             }
         });
 
-        // Event listener para os botões de filtro de dias (permanece o mesmo)
         const divFiltrosDias = document.getElementById('filtros-previsao-dias');
         if (divFiltrosDias) {
             divFiltrosDias.addEventListener('click', (event) => {
@@ -1362,12 +1323,8 @@ function setupEventListeners() {
                 }
             });
         }
-
-    } else {
-        console.warn("Elementos do Planejador de Viagem (botão, input destino, área resultado ou controles) não encontrados no DOM.");
     }
     
-    // --- Event Listeners para a seção de DICAS DE MANUTENÇÃO ---
     const btnDicasGerais = document.getElementById('btn-buscar-dicas-gerais');
     const btnDicasTipo = document.getElementById('btn-buscar-dicas-tipo');
     const selectTipoDica = document.getElementById('select-tipo-dica');
@@ -1393,12 +1350,7 @@ function setupEventListeners() {
             exibirDicas(dicas, dicasResultadoArea);
         });
     }
-    
     console.log("Listeners Iniciais configurados.");
 }
 
-
 document.addEventListener('DOMContentLoaded', inicializarAplicacao);
-
-
-
